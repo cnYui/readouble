@@ -23,24 +23,24 @@ Ref: main
 AIUI project directory: agent
 ```
 
-Studio 左上角「新建智能体」→「GitHub 导入」填 `https://github.com/cnYui/readouble/tree/main/agent`，导入后在项目「···」菜单选「上传云端」，再在对话框发送 `/debug 模拟眼镜设备运行读伴页面 pages/explain/index`，卡片上点「进入」。同一地址再导入会就地更新。
+Studio 左上角「新建智能体」→「GitHub 导入」填 `https://github.com/cnYui/readouble/tree/main/agent`，导入后在项目「···」菜单选「上传云端」，再在对话框发送 `/debug 模拟眼镜设备运行读伴页面 pages/explain/index`，卡片上点「进入」。同一地址再导入会就地更新。GitHub 上的版本不含密钥，要用中转站识别请看下一节。
 
 ## 视觉识别：中转站与密钥
 
-识别调用 `agent/config/vision.js` 里的 OpenAI 兼容中转站：`POST {baseUrl}/chat/completions`，照片作为 JPEG Data URL 放在 `image_url` 里，非流式返回。追问时连同照片和上一轮回答一起重发。
+识别调用 `agent/config/vision.js` 里的 OpenAI 兼容中转站：`POST {baseUrl}/chat/completions`，照片作为 JPEG Data URL 放在 `image_url` 里，非流式返回。追问时连同照片和上一轮回答一起重发。`agent/` 里没有任何模拟或预置的识别结果：请求失败就显示中转站返回的错误。
 
 | 字段 | 默认值 |
 | --- | --- |
-| `baseUrl` | `https://api.aaccx.pw/v1` |
+| `baseUrl` | `https://api2.ai-genesis.app/v1` |
 | `model` | `gpt-5.5` |
 | `reasoningEffort` | `medium`（作为 `reasoning_effort` 发送；空字符串则不发送） |
-| `timeoutMs` | `60000` |
+| `timeoutMs` | `150000`（页面整轮看门狗再加 10 秒） |
 | `apiKey` | 空 |
 
 - **密钥放在仓库根目录的 `.env`，不进 Git。** 复制 `.env.example` 为 `.env`，填 `READOUBLE_VISION_KEY`；可选 `READOUBLE_VISION_MODEL`、`READOUBLE_VISION_EFFORT`、`READOUBLE_VISION_BASE_URL`。`.env` 和 `build/` 都在 `.gitignore` 里；`tests/secrets.test.js` 会在任何被 Git 跟踪的文件里出现 `sk-…`，或 `.env` 不再被忽略时，让 `npm test` 失败。
-- **把密钥带进 Studio 和眼镜：** `npm run build:agent` 把 `agent/` 复制到 `build/agent/`，并把 `.env` 的配置写进 `build/agent/config/vision.js`。在 Studio 对项目「···」▸「本地导入」选择 `build/agent`，再「上传云端」；眼镜更新资源包后就带着密钥。GitHub 导入的是不含密钥的 `agent/`。
-- `apiKey` 为空时页面退回宿主 `LanguageModel`，进度行写“宿主模型”；配置了密钥时写模型名。
-- **Studio 网页模拟器调不通这个中转站：** 它拒绝来自 `https://aiui.rokid.com` 的跨域预检（HTTP 403，没有 `Access-Control-Allow-Origin`）。真机走原生网络，不受跨域限制，要在眼镜上验证。
+- **把密钥带进 Studio 和眼镜：** `npm run build:agent` 把 `agent/` 复制到 `build/agent/`，并把 `.env` 的配置写进 `build/agent/config/vision.js`。在 Studio 对项目「···」▸「本地导入」选择 `build/agent`，再「上传云端」；眼镜更新资源包后就带着密钥。
+- **没有密钥时：** 页面改用宿主 `LanguageModel`，进度行写“宿主模型”。Studio 草稿态的宿主模型不读图（见下方实测），所以不带密钥的版本拍照解读不可信。**配置了密钥时只走中转站**，中转站失败、被拦截或断网都直接报错，不会退回宿主模型。
+- **跨域：** `api2.ai-genesis.app` 对任意来源放行（预检 204，`Access-Control-Allow-Origin: *`，允许 `Authorization`）。在 `https://aiui.rokid.com` 页面里直接 `fetch` 能拿到响应，所以 Studio 网页模拟器可以请求它。之前的 `api.aaccx.pw` 预检返回 403，浏览器里直接 `Failed to fetch`。
 - 发布前要在开发者后台登记中转站域名，并在提审表单里如实声明网络权限：照片和问题会发给这个第三方中转站。
 
 ### 先验证模型真的在读图
@@ -53,21 +53,22 @@ npm run test:live
 
 ### 2026-09-11 实测
 
-| 模型 | 结果 |
+| 后端 | 结果 |
 | --- | --- |
 | Studio 宿主默认模型 | 照片确实随请求发出（`rcs.rokid.com/metis/api/chat/completions`，请求体 342,764 字节，含 256,077 字节的 JPEG），但一张 “OSAKA ROKID GLASSES” 海报被解读成 Transformer 论文段落：没有读图 |
-| 中转站 `grok-4.5` / `grok-4.6`（开通 gpt-5.5 之前） | 4.6 返回 502；4.5 能返回但编造图片内容：测试图被说成“可控系统动力学”段落，一张 AIUI Studio 截图被说成“USDC 支付页面”；没有图片时它会正确回答 `NO_IMAGE` |
-| 中转站 `gpt-5.5`，推理 medium（开通之后） | **读图正确**：原样引用测试图里的 `LRW-7391`，三段格式和术语都对；追问“为什么能降低方差”答对；“翻译一下”给出含 “38%” 的完整译文，说明追问时仍在看图 |
+| `api.aaccx.pw`，`grok-4.5` / `grok-4.6` | 4.6 返回 502；4.5 能返回但编造图片内容，测试图被说成“可控系统动力学”段落 |
+| `api.aaccx.pw`，`gpt-5.5` medium | 读图正确，但浏览器跨域被拦（预检 403） |
+| `api2.ai-genesis.app`，`gpt-5.5` medium | **读图正确**：引用 `LRW-7391` 和只印在图上的 “38%”；追问、翻译都继续看图；跨域放行 |
 
-`gpt-5.5` 每轮耗时（`npm run test:live` 和三轮对话实测）：
+`gpt-5.5` 每轮耗时：
 
-| 请求 | 耗时 |
-| --- | --- |
-| 第一轮看图解读 | 27 秒、48 秒 |
-| 追问 | 96 秒 |
-| 翻译一下 | 29 秒 |
+| 请求 | `api.aaccx.pw` | `api2.ai-genesis.app` |
+| --- | --- | --- |
+| 第一轮看图解读 | 27 秒、48 秒 | 40 秒、71 秒 |
+| 追问 | 96 秒 | 21 秒 |
+| 翻译一下 | 29 秒 | 64 秒 |
 
-推理本身只用了约 95 个 token，慢的原因大概率在中转站，未确认。页面据此把中转站请求超时设为 150 秒，整轮看门狗为 160 秒。
+每轮 20–100 秒不等，所以中转站请求超时是 150 秒，页面整轮看门狗是 160 秒。
 
 ## 交互流程
 
@@ -96,7 +97,7 @@ npm run test:live
 - 【解读】中文说明，120 字以内，会被朗读
 - 【术语】最多 3 个“术语：一句话解释”
 
-模型没有按格式回答时，整段文字作为解读显示。模型回答 `NO_IMAGE`（看不到照片）时页面不显示任何“原文”，改为请用户念出这段文字。追问的回答直接替换解读正文，原文摘录和术语保留。
+模型没有按格式回答时，整段文字作为解读显示。模型回答 `NO_IMAGE`（看不到照片）时页面不显示任何“原文”，改为请用户念出这段文字。追问的回答直接替换解读正文，原文摘录和术语保留。进度行最后写着这一次回答来自哪个模型。
 
 ## 目录
 
@@ -110,8 +111,10 @@ agent/                     AIUI Studio 导入根（AIUI 0.17.0）
   lib/vision.js            中转站请求、错误说明、对话历史裁剪
   lib/temple.js            镜腿输入去重（来自 doubletraining）
   aiui-audit-claims.json   审计声明
-tests/                     Node 测试（不进 Studio）
+.env.example               密钥模板（真正的 .env 被 Git 忽略）
+tests/                     Node 测试（不进 Studio，也不进安装包）
   fixtures/test-paper.jpg  实测用的“论文”图片（编造的 LRW-7391）
+tools/build_agent.mjs      生成带密钥的 build/agent/（被 Git 忽略）
 tools/build_audit.py       从最新能力清单生成审计矩阵
 docs/aiui-audit.md         UX / 能力审计矩阵（本机无签名权威，所有层为 BLOCKED）
 ```
@@ -121,22 +124,27 @@ docs/aiui-audit.md         UX / 能力审计矩阵（本机无签名权威，所
 ```bash
 npm test
 npm run validate
+npm run test:live
+npm run build:agent
 python tools/build_audit.py
 ```
 
-需要 Node 20+。`tests/page.test.js`（宿主模型路径）和 `tests/page.relay.test.js`（中转站路径）会把 `.ink` 里的 `<script setup>` 当作真实模块加载，用假的相机、模型、网络、语音识别和朗读跑完整个状态机。
+需要 Node 20+；`npm run test:live` 用到 `--env-file-if-exists`，需要 Node 22.9+。`tests/page.test.js`（宿主模型路径）和 `tests/page.relay.test.js`（中转站路径）会把 `.ink` 里的 `<script setup>` 当作真实模块加载，用假的相机、模型、网络、语音识别和朗读跑完整个状态机。这些假对象只在 `tests/` 里，不会进 Studio 或安装包。
 
 ## Studio 模拟器里已验证（2026-09-11，Studio 1.1.0）
 
 - GitHub 导入、上传云端、`/debug` 进入 480 × 352 效果预览；页面收到 `onTargetChanged(undefined → _current)`、`onLoad`、`onShow`，没有 `onReady`，所以自动拍照挂在首次 `onShow`。
+- 日志第一行打印版本号和识别来源，例如 `build=2026-09-11.relay-1 vision=host`。
 - 单击 = `GlobalHook` + `Enter`（页面只执行一次动作）；向前 / 向后滑动 = `GlobalHook` + `ArrowUp` / `ArrowDown`；双击不会送到页面。
 - 「摄像头」面板上传的本地图片会原样交给 `takePhoto()`（字节数和 SHA-256 一致）。
 - 宿主 `LanguageModel` 的请求在「网络」面板里显示为 `POST · InkView Runtime`，看得到请求体大小，看不到流式响应正文。
+- 在 `https://aiui.rokid.com` 页面里直接请求 `api2.ai-genesis.app` 能读到 401 JSON（跨域放行）；同样的请求发给 `api.aaccx.pw` 被浏览器拦截。
 - 听写一段英文原文后，宿主模型约 30–45 秒返回三段式回答，右侧出现 TTS 卡片朗读【解读】。
 - 长文本通知不会被 `text-overflow: ellipsis` 截断，已在 JS 里裁剪。
 
 ## 未验证
 
-- 在眼镜上用带密钥的副本跑通整条流程：真实相机拍照、中转站连通性、每轮 30–100 秒的等待是否能接受、相机照片的大小上限。Studio 网页模拟器因为跨域限制测不了中转站。
+- 在 Studio 里导入带密钥的 `build/agent` 后，页面的 `fetch` 实际打到中转站：日志应为 `vision=relay:gpt-5.5`，「网络」面板应出现 `api2.ai-genesis.app`。
+- 眼镜上的整条流程：真实相机拍照、中转站连通性、每轮 20–100 秒的等待是否能接受、相机照片的大小上限。
 - 追问是否需要 `RECORD_AUDIO` 权限；清单里已按“真实使用麦克风”申报。
 - 真机的光学、按键顺序、权限弹窗、朗读、性能。模拟器结论不等于真机通过。

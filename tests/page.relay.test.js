@@ -95,8 +95,24 @@ test('follow-ups resend the photo turn and the previous answer', async () => {
   page.onUnload();
 });
 
+test('a blocked or offline relay shows the network error and never falls back to the host model', async () => {
+  const runtime = installRuntime();
+  // What a browser reports when CORS blocks the request (api.aaccx.pw from aiui.rokid.com).
+  globalThis.fetch = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+  const page = openPage({});
+  await waitFor(() => page.data.phase === 'error');
+  assert.equal(page.data.errorTitle, '解读失败');
+  assert.match(page.data.errorText, /连不上中转站/);
+  assert.match(page.data.errorText, /Failed to fetch/);
+  assert.equal(page.data.excerpt, '');
+  assert.equal(runtime.calls.prompts.length + runtime.calls.streams.length, 0, 'no host-model fallback');
+  page.onUnload();
+});
+
 test('relay errors show the relay message without the key, and Enter retries', async () => {
-  installRuntime();
+  const runtime = installRuntime();
   const calls = installFetch((count) => count === 1 ?
     jsonResponse(404, { error: { message: 'Model "vision-model" is not supported by any configured account in this group' } }) :
     reply('【解读】好了'));
@@ -107,6 +123,7 @@ test('relay errors show the relay message without the key, and Enter retries', a
   assert.match(page.data.errorText, /not supported/);
   assert.ok(!page.data.errorText.includes('fixture-key'));
   assert.equal(page.data.hint, '单击 重试');
+  assert.equal(runtime.calls.prompts.length + runtime.calls.streams.length, 0, 'no host-model fallback');
   page.onKeyUp(keyEvent('Enter'));
   await waitFor(() => page.data.phase === 'answered');
   assert.equal(calls.length, 2);

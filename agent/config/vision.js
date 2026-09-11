@@ -7,11 +7,11 @@
 // the host LanguageModel.
 export default {
   enabled: true,
-  baseUrl: 'https://api.aaccx.pw/v1',
+  baseUrl: 'https://api2.ai-genesis.app/v1',
   model: 'gpt-5.5',
   reasoningEffort: 'medium',
   apiKey: '',
-  // gpt-5.5 at medium effort took 27-96 s per turn through this relay on
-  // 2026-09-11; the page's turn watchdog is this value plus 10 s.
+  // gpt-5.5 at medium effort took 21-71 s per turn here (27-96 s on the
+  // previous relay) on 2026-09-11; the page's turn watchdog is this plus 10 s.
   timeoutMs: 150000
 };

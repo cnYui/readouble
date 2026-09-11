@@ -39,12 +39,14 @@
 - `SpeechRecognition`：不触发 `onstart`；内置浏览器里输入中文进不去「语音输入」框，英文可以。
 - `text-overflow: ellipsis` 不生效；`<page>` 根节点动态类不生效；`ink:for` 用 `<block ink:for … ink:for-item="x">`；被 `ink:if` 销毁重建的块里 `ink:for` 不再渲染。
 
-## 中转站实测（`https://api.aaccx.pw/v1`，2026-09-11）
+## 中转站实测（2026-09-11）
 
-- 开通前：密钥分组只有 `grok-4.5`、`grok-4.6`；`gpt-5.5` 404，`grok-4.6` 502，`grok-4.5` 编造图片内容且不会回答 `NO_IMAGE`。
-- 用户开通后：`/v1/models` 有 `gpt-5.4*`、`gpt-5.5`、`gpt-5.6*`。`gpt-5.5` + `reasoning_effort: medium` 读图正确（引用 `LRW-7391`），追问和“翻译一下”都还能看图；每轮 27–96 秒，所以 `config/vision.js` 的 `timeoutMs` 是 150000，页面整轮看门狗是它加 10 秒（`_turnTimeoutMs()`）。
-- CORS：预检仍 403，无 `Access-Control-Allow-Origin` → Studio 网页模拟器调不通；真机不受影响。
-- 换模型或换密钥后，先跑 `npm run test:live`（读 `.env`），回答里必须引用测试图里的 `LRW-7391`。
+- 当前默认 `https://api2.ai-genesis.app/v1`：新密钥的 `/v1/models` 有 7 个模型，其中 `gpt-5.5`、`gpt-5.6-sol`、`gpt-5.6-terra`。`gpt-5.5` + `reasoning_effort: medium` 读图正确（引用 `LRW-7391` 和图中 “38%”），追问、翻译都继续看图；三轮 40 / 21 / 64 秒，`test:live` 一次 71 秒。
+- 跨域：预检 204、`Access-Control-Allow-Origin: *`、允许 `Authorization`；在 `https://aiui.rokid.com` 页面里直接 `fetch` 能读到 401 JSON → Studio 网页模拟器可以请求它（前提是导入带密钥的 `build/agent`）。
+- 旧的 `https://api.aaccx.pw/v1`：`gpt-5.5` 读图正确但每轮 27–96 秒；预检 403，浏览器里 `Failed to fetch`；`grok-4.5` 编造图片内容。
+- 超时：`config/vision.js` 的 `timeoutMs` 是 150000，页面整轮看门狗是它加 10 秒（`_turnTimeoutMs()`）。
+- `agent/` 里没有任何模拟数据。没有密钥时页面退回宿主 `LanguageModel`（Studio 草稿态不读图，会编内容）；有密钥时只走中转站，失败直接报错（`tests/page.relay.test.js` 锁住了这一点）。
+- 换模型、换中转站或换密钥后，先跑 `npm run test:live`（读 `.env`），回答里必须引用测试图里的 `LRW-7391`。
 
 ## 页面状态机（`_phase`）
 
