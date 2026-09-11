@@ -322,5 +322,6 @@ test('the committed config has no key, so the page uses the host model and says 
   const page = openPage({});
   await waitFor(() => page.data.phase === 'answered');
   assert.match(page.data.stepText, /宿主模型/);
+  assert.equal(page._turnTimeoutMs(), 75000);
   page.onUnload();
 });

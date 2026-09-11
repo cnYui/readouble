@@ -7,7 +7,7 @@
 
 import { errorMessage } from './reply.js';
 
-export const DEFAULT_VISION_TIMEOUT_MS = 60000;
+export const DEFAULT_VISION_TIMEOUT_MS = 150000;
 export const MAX_HISTORY_MESSAGES = 12;
 
 function trimmed(value) {

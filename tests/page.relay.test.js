@@ -70,6 +70,8 @@ test('the photo goes to the relay with the system prompt, image, key, and effort
   assert.match(user.content[1].image_url.url, /^data:image\/jpeg;base64,/);
   assert.equal(page.data.excerpt, 'We introduce Lattice Reweighting (LRW-7391).');
   assert.match(page.data.stepText, /vision-model/);
+  assert.equal(page._turnTimeoutMs(), 160000, 'turn watchdog must outlast the relay timeout');
+  assert.equal(calls[0].init.timeout, 150000);
   assert.equal(runtime.calls.spoken.length, 1);
   page.onUnload();
 });

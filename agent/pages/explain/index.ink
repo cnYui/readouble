@@ -297,15 +297,25 @@ export default {
     }
   },
 
+  // The relay's own request timeout plus a margin, never shorter than the host
+  // budget. gpt-5.5 at medium effort took 27-96 s per turn through the relay
+  // on 2026-09-11, so a fixed 75 s would cut off slow follow-ups.
+  _turnTimeoutMs() {
+    const relayMs = this._useRelay && Number.isInteger(visionConfig.timeoutMs) ?
+      visionConfig.timeoutMs + 10000 : 0;
+    return Math.max(LLM_TIMEOUT_MS, relayMs);
+  },
+
   _armTurnTimer(turn) {
     this._clearTurnTimer();
+    const limitMs = this._turnTimeoutMs();
     this._turnTimer = setTimeout(() => {
       this._turnTimer = null;
       if (turn !== this._turn) return;
       this._turn += 1;
       this._abortRelay();
-      this._fail('llm', '模型超时', '等了 ' + Math.round(LLM_TIMEOUT_MS / 1000) + ' 秒没有回答。');
-    }, LLM_TIMEOUT_MS);
+      this._fail('llm', '模型超时', '等了 ' + Math.round(limitMs / 1000) + ' 秒没有回答。');
+    }, limitMs);
   },
 
   // Clears both the idle timer and the stop-grace timer.

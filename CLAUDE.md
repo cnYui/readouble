@@ -41,9 +41,10 @@
 
 ## 中转站实测（`https://api.aaccx.pw/v1`，2026-09-11）
 
-- 当前密钥的 `/v1/models` 只有 `grok-4.5`、`grok-4.6`。`gpt-5.5` / `gpt-5.5-medium` → 404（分组没有配置）；`grok-4.6` → 502；`grok-4.5` → 200 但编造图片内容，且不会回答 `NO_IMAGE`。
-- CORS：预检 403，无 `Access-Control-Allow-Origin` → Studio 网页模拟器调不通；真机不受影响。
-- 换模型或换密钥后，先跑 `READOUBLE_VISION_KEY=... npm test`，回答里必须引用测试图里的 `LRW-7391`。
+- 开通前：密钥分组只有 `grok-4.5`、`grok-4.6`；`gpt-5.5` 404，`grok-4.6` 502，`grok-4.5` 编造图片内容且不会回答 `NO_IMAGE`。
+- 用户开通后：`/v1/models` 有 `gpt-5.4*`、`gpt-5.5`、`gpt-5.6*`。`gpt-5.5` + `reasoning_effort: medium` 读图正确（引用 `LRW-7391`），追问和“翻译一下”都还能看图；每轮 27–96 秒，所以 `config/vision.js` 的 `timeoutMs` 是 150000，页面整轮看门狗是它加 10 秒（`_turnTimeoutMs()`）。
+- CORS：预检仍 403，无 `Access-Control-Allow-Origin` → Studio 网页模拟器调不通；真机不受影响。
+- 换模型或换密钥后，先跑 `npm run test:live`（读 `.env`），回答里必须引用测试图里的 `LRW-7391`。
 
 ## 页面状态机（`_phase`）
 

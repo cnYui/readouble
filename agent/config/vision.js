@@ -11,5 +11,7 @@ export default {
   model: 'gpt-5.5',
   reasoningEffort: 'medium',
   apiKey: '',
-  timeoutMs: 60000
+  // gpt-5.5 at medium effort took 27-96 s per turn through this relay on
+  // 2026-09-11; the page's turn watchdog is this value plus 10 s.
+  timeoutMs: 150000
 };

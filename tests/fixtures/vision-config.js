@@ -6,5 +6,5 @@ export default {
   model: 'vision-model',
   reasoningEffort: 'medium',
   apiKey: 'fixture-key',
-  timeoutMs: 5000
+  timeoutMs: 150000
 };
