@@ -1,5 +1,9 @@
 node_modules/
 artifacts/
+build/
 *.aix
+.env
+.env.*
+!.env.example
 .DS_Store
 Thumbs.db

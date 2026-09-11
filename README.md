@@ -37,8 +37,8 @@ Studio 左上角「新建智能体」→「GitHub 导入」填 `https://github.c
 | `timeoutMs` | `60000` |
 | `apiKey` | 空 |
 
-- **密钥不进 Git。** 仓库是公开的；`tests/secrets.test.js` 会在 `agent/` 里出现 `sk-…` 时让 `npm test` 失败。
-- **在 Studio 里填密钥：** 导入后打开「代码」→ `config/vision.js` → 把密钥填进 `apiKey` →「上传云端」。每次从 GitHub 重新导入都会覆盖这个文件，要重新填。
+- **密钥放在仓库根目录的 `.env`，不进 Git。** 复制 `.env.example` 为 `.env`，填 `READOUBLE_VISION_KEY`；可选 `READOUBLE_VISION_MODEL`、`READOUBLE_VISION_EFFORT`、`READOUBLE_VISION_BASE_URL`。`.env` 和 `build/` 都在 `.gitignore` 里；`tests/secrets.test.js` 会在任何被 Git 跟踪的文件里出现 `sk-…`，或 `.env` 不再被忽略时，让 `npm test` 失败。
+- **把密钥带进 Studio 和眼镜：** `npm run build:agent` 把 `agent/` 复制到 `build/agent/`，并把 `.env` 的配置写进 `build/agent/config/vision.js`。在 Studio 对项目「···」▸「本地导入」选择 `build/agent`，再「上传云端」；眼镜更新资源包后就带着密钥。GitHub 导入的是不含密钥的 `agent/`。
 - `apiKey` 为空时页面退回宿主 `LanguageModel`，进度行写“宿主模型”；配置了密钥时写模型名。
 - **Studio 网页模拟器调不通这个中转站：** 它拒绝来自 `https://aiui.rokid.com` 的跨域预检（HTTP 403，没有 `Access-Control-Allow-Origin`）。真机走原生网络，不受跨域限制，要在眼镜上验证。
 - 发布前要在开发者后台登记中转站域名，并在提审表单里如实声明网络权限：照片和问题会发给这个第三方中转站。
@@ -46,7 +46,7 @@ Studio 左上角「新建智能体」→「GitHub 导入」填 `https://github.c
 ### 先验证模型真的在读图
 
 ```bash
-READOUBLE_VISION_KEY=<你的密钥> npm test
+npm run test:live
 ```
 
 `tests/relay.integration.test.js` 会把 `tests/fixtures/test-paper.jpg` 发给当前配置的模型。图里是编造的方法名 “Lattice Reweighting (LRW-7391)”，模型不可能凭记忆答出；回答里没有 `LRW-7391` 就判定失败。用 `READOUBLE_VISION_MODEL` 和 `READOUBLE_VISION_EFFORT` 可以临时换模型。

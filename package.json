@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:live": "node --env-file-if-exists=.env --test tests/relay.integration.test.js",
+    "build:agent": "node tools/build_agent.mjs",
     "validate": "python C:/Users/yui/.claude/skills/rokid-aiui-agent/scripts/validate_aiui_project.py agent --repository-root . --target-version 0.17.0 --strict"
   },
   "engines": {

@@ -31,7 +31,7 @@
 ## Configuration
 
 - `config/vision.js`：`baseUrl`、`model`、`reasoningEffort`、`timeoutMs`、`apiKey`。
-- `apiKey` 在 Git 中保持为空（仓库是公开的）。只在 AIUI Studio 的代码编辑器里填写，再「上传云端」；从 GitHub 重新导入会覆盖 Studio 里的副本，需要重新填写。
+- `apiKey` 在 Git 中保持为空（仓库是公开的）。密钥写在仓库根目录的 `.env`，由 `npm run build:agent` 生成带密钥的 `build/agent/`，在 Studio 用「本地导入」导入后「上传云端」。
 
 ## Dependencies
 

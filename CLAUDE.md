@@ -16,8 +16,9 @@
 
 ## 密钥
 
-- **绝不把中转站密钥写进仓库里的任何文件**，也不要在 Studio 的编辑器里替用户填密钥（由用户自己在 Studio「代码」→ `config/vision.js` 填写后「上传云端」）。
-- 本地真实测试只通过环境变量传入：`READOUBLE_VISION_KEY=... npm test`。
+- 密钥只放在仓库根目录的 `.env`（在 `.gitignore` 里），模板是 `.env.example`。绝不写进任何被 Git 跟踪的文件，也不要在 Studio 的网页编辑器里替用户填密钥。
+- `npm run build:agent` 生成 `build/agent/`（也被忽略），其中 `config/vision.js` 带着 `.env` 的配置；用户在 Studio 对项目「···」▸「本地导入」选这个目录再「上传云端」。
+- `npm run test:live` 用 `.env` 跑真实中转站测试；`npm test` 保持离线，并用 `tests/secrets.test.js` 检查被跟踪的文件里没有密钥、`.env` 和 `build/` 仍被忽略。
 
 ## 改代码 → Studio 调试的循环
 

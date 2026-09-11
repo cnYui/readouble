@@ -1,11 +1,10 @@
 // Vision relay used to read the photo (OpenAI-compatible /chat/completions).
 //
-// The API key is intentionally empty in Git: this repository is public, and a
-// committed key is scraped within minutes. To use the relay, paste the key into
-// `apiKey` in AIUI Studio's 代码 editor (this file), then 上传云端. Re-importing
-// from GitHub overwrites the Studio copy, so paste it again after each import.
-//
-// With an empty key the page falls back to the host LanguageModel.
+// The API key is never committed. Put it in the repository-root .env as
+// READOUBLE_VISION_KEY (see .env.example) and run `npm run build:agent`: that
+// writes build/agent/ with the key filled in. Import that folder in Studio
+// (项目「···」▸ 本地导入) and 上传云端. With an empty key the page falls back to
+// the host LanguageModel.
 export default {
   enabled: true,
   baseUrl: 'https://api.aaccx.pw/v1',
