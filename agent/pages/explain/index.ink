@@ -142,6 +142,9 @@ export default {
   onShow() {
     this._isVisible = true;
     log('explain onShow ' + this._id + ' phase=' + this._phase);
+    // AIUI Studio 1.1.0 never delivered onReady to this Page (2026-09-11 log),
+    // so the first show also triggers the automatic shot; _autoAttempted keeps it to one.
+    this._autoCapture();
   },
 
   onHide() {
