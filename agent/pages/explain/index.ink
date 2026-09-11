@@ -49,6 +49,7 @@ const LLM_TIMEOUT_MS = 45000;
 const ASR_IDLE_TIMEOUT_MS = 6000;
 const STREAM_POLL_MS = 16;
 const SCROLL_STEP_PX = 120;
+const MAX_CAPTURE_FAILURES = 2;
 const SPEECH_LANG = 'zh-CN';
 
 const STEPS = {
@@ -113,6 +114,7 @@ export default {
     this._speechGeneration = 0;
     this._hasImage = false;
     this._hasAnswer = false;
+    this._captureFailures = 0;
     this._errorKind = '';
     this._lastRequest = null;
     this._autoAttempted = false;
@@ -410,7 +412,9 @@ export default {
     } catch (error) {
       if (turn !== this._turn) return;
       const kind = classifyCameraError(error);
-      log('takePhoto failed (' + source + '): ' + kind + ' ' + errorMessage(error));
+      // A rejected automatic shot is expected on some hosts and does not count.
+      if (source !== 'auto') this._captureFailures += 1;
+      log('takePhoto failed (' + source + ', #' + this._captureFailures + '): ' + kind + ' ' + errorMessage(error));
       if (kind === 'denied') {
         this._fail('camera', '相机权限被拒绝', '在 Hi Rokid App 里允许读伴使用相机，或单击镜腿把这段文字念给我听。');
       } else if (kind === 'unavailable') {
@@ -421,11 +425,16 @@ export default {
           captureText: '单击镜腿后拍照，段落放在视野中央',
           notice: ''
         });
+      } else if (this._captureFailures >= MAX_CAPTURE_FAILURES) {
+        // Studio's webcam dialog reports a bare QuickJS exception when the
+        // browser blocks the camera; after repeated failures stop retrying.
+        this._fail('camera', '相机连续失败', '拍不到照片。单击镜腿，把看不懂的这段文字念给我听。');
       } else {
-        this._fail('camera-retry', '拍照失败', errorMessage(error));
+        this._fail('camera-retry', '拍照失败', '宿主没有返回照片，单击镜腿再拍一次。');
       }
       return;
     }
+    this._captureFailures = 0;
     if (turn !== this._turn) return;
     let encoded;
     try {
