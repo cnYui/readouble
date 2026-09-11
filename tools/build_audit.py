@@ -109,6 +109,22 @@ BEHAVIOR = {
 }
 
 
+POLICY["network.https"] = (
+    "CAP-NETWORK-HTTPS",
+    ALL,
+    None,
+    [
+        ("DOC", "HTTPS", BLOB + "documentation/3-api/network/https.en-US.md"),
+        ("SAMPLE", "HTTPS implementation", BLOB + "samples/capabilities/pages/network_https/index.ink"),
+    ],
+)
+BEHAVIOR["network.https"] = (
+    "A successful HTTPS request updates only the current intended state",
+    "Offline, timeout, malformed, partial, and rejected responses use bounded retry and recovery",
+    "Hide/show and unload cancel or reconcile every retained HTTPS request",
+)
+
+
 def run_inventory() -> dict:
     result = subprocess.run(
         [sys.executable, str(SKILL_SCRIPTS / "inventory_aiui_capabilities.py"), IMPORT_ROOT,

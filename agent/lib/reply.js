@@ -8,10 +8,21 @@ export const TASKS = ['explain', 'translate', 'summarize'];
 export const MAX_SPOKEN_LENGTH = 240;
 export const MAX_TRANSCRIPT_LENGTH = 400;
 
+// A model that cannot see the attached photo is told to answer with this
+// token instead of inventing a passage (the Studio default model did exactly
+// that on 2026-09-11: a poster photo came back as a Transformer paragraph).
+export const NO_IMAGE_TOKEN = 'NO_IMAGE';
+
+export function isNoImageReply(text) {
+  const cleaned = normalizeText(text).replace(/[。.！!\s]+$/, '');
+  return cleaned === NO_IMAGE_TOKEN || cleaned.indexOf(NO_IMAGE_TOKEN) === 0;
+}
+
 export const SYSTEM_PROMPT = [
   '你是「读伴」，陪用户读英文论文的助手，运行在 Rokid 眼镜上。',
   '用户会把眼镜对准论文拍照，照片就是用户此刻正在看的页面。',
   '规则：',
+  '0. 用户说附上了照片时，先确认你真的看到了这张照片：看不到照片或看不清上面的文字，只输出 ' + NO_IMAGE_TOKEN + ' 这一个词，绝对不要凭记忆编造原文。用户是念出文字而不是拍照时，忽略这一条。',
   '1. 先找到与用户问题最相关的段落、公式或图表；用户没有指明时，解读照片中央最主要的段落。',
   '2. 第一次回答严格按三段输出，标题原样保留，每段各占一行：',
   '【原文】不超过两句话的关键原文摘录（英文原样，公式用文字描述）',
@@ -72,7 +83,14 @@ export function taskLabel(task) {
 }
 
 // First turn: photo + question.
+// Marks the message as carrying a photo, so system rule 0 (NO_IMAGE) applies.
+export const PHOTO_ATTACHED_NOTE = '（本条消息附上了一张照片）';
+
 export function buildImageInstruction(question, task) {
+  return PHOTO_ATTACHED_NOTE + imageInstructionBody(question, task);
+}
+
+function imageInstructionBody(question, task) {
   const q = question || DEFAULT_QUESTION;
   if (task === 'translate') {
     return '用户的问题：' + q +
@@ -282,7 +300,7 @@ export function hintFor(phase, errorKind) {
   if (phase === 'answered') return '单击 语音追问 · 前后滑动 翻看';
   if (phase === 'listening') return '说出问题 · 单击 结束';
   if (phase === 'error') {
-    if (errorKind === 'camera') return '单击 念出这段文字 由我来解读';
+    if (errorKind === 'camera' || errorKind === 'vision') return '单击 念出这段文字 由我来解读';
     if (errorKind === 'llm') return '单击 重试';
     if (errorKind === 'asr') return '单击 再试一次';
     return '单击 重试';

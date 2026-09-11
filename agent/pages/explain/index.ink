@@ -24,6 +24,7 @@
 
 <script setup>
 import wx from 'wx';
+import visionConfig from '../../config/vision.js';
 import { createTempleInput } from '../../lib/temple.js';
 import {
   SYSTEM_PROMPT,
@@ -37,6 +38,7 @@ import {
   errorMessage,
   extractTranscript,
   hintFor,
+  isNoImageReply,
   normalizeInput,
   normalizeText,
   parseReply,
@@ -45,25 +47,33 @@ import {
   statusFor,
   taskLabel
 } from '../../lib/reply.js';
+import { callVision, trimHistory, visionConfigured } from '../../lib/vision.js';
 
+// Logged on onLoad so Studio's log shows which build is actually running.
+const BUILD = '2026-09-11.relay-1';
 // Studio's simulator answered the image-free first turn in ~30-45 s; the
 // photo turn has no streaming progress, so the silence budget stays generous.
 const LLM_TIMEOUT_MS = 75000;
 const ASR_IDLE_TIMEOUT_MS = 6000;
+// Studio 1.1.0 left the page listening after stop() when no speech had
+// arrived (onend never fired); after this grace the page ends the turn itself.
+const ASR_STOP_GRACE_MS = 1500;
 const STREAM_POLL_MS = 16;
 const SCROLL_STEP_PX = 120;
 const MAX_CAPTURE_FAILURES = 2;
 const SPEECH_LANG = 'zh-CN';
 
 const STEPS = {
-  ready: '拍照 ○ · 识别 ○ · 解读 ○',
-  capturing: '拍照 ● · 识别 ○ · 解读 ○',
+  ready: '拍照 ○ · 识别与解读 ○',
+  capturing: '拍照 ● · 识别与解读 ○',
   reading: '拍照 ✓ · 识别与解读 ●',
-  answered: '拍照 ✓ · 识别 ✓ · 解读 ✓',
+  answered: '拍照 ✓ · 识别与解读 ✓',
   listening: '追问 ◉ · 说完后单击结束',
   followup: '追问 ✓ · 回答 ●',
   spoken: '相机不可用 · 听写 ✓ · 解读 ●'
 };
+// Steps that name the answering model, so a host fallback is never mistaken for the relay.
+const SOURCE_STEPS = ['reading', 'answered', 'followup', 'spoken'];
 
 function log(message) {
   console.log('[readouble] ' + message);
@@ -71,6 +81,11 @@ function log(message) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The page's only HTTPS dependency: the vision relay in config/vision.js.
+function relayFetch(url, init) {
+  return fetch(url, init);
 }
 
 export default {
@@ -109,6 +124,9 @@ export default {
     this._turn = 0;
     this._turnTimer = null;
     this._asrTimer = null;
+    this._asrStopTimer = null;
+    this._asrFinal = '';
+    this._asrLive = '';
     this._session = null;
     this._recognition = null;
     this._asrFailed = false;
@@ -122,6 +140,10 @@ export default {
     this._errorKind = '';
     this._lastRequest = null;
     this._autoAttempted = false;
+    this._useRelay = visionConfigured(visionConfig);
+    this._sourceName = this._useRelay ? String(visionConfig.model).trim() : '宿主模型';
+    this._relayHistory = [];
+    this._relayController = null;
     this._input = createTempleInput({
       now: () => Date.now(),
       schedule: (callback, delay) => setTimeout(callback, delay),
@@ -131,8 +153,10 @@ export default {
     const input = normalizeInput(query);
     this._question = input.question;
     this._task = input.task;
-    log('explain onLoad ' + this._id + ' query=' + JSON.stringify(query) +
-      ' question=' + input.question + ' task=' + input.task + ' valid=' + input.valid);
+    log('explain onLoad ' + this._id + ' build=' + BUILD + ' vision=' +
+      (this._useRelay ? 'relay:' + this._sourceName : 'host') +
+      ' query=' + JSON.stringify(query) + ' question=' + input.question +
+      ' task=' + input.task + ' valid=' + input.valid);
     this._setPhase('ready', {
       questionLabel: '问：' + input.question,
       taskLabel: taskLabel(input.task),
@@ -247,7 +271,7 @@ export default {
 
   _retry() {
     const kind = this._errorKind;
-    if (kind === 'camera') {
+    if (kind === 'camera' || kind === 'vision') {
       this._startListening();
     } else if (kind === 'camera-retry') {
       this._capture('retry');
@@ -279,25 +303,37 @@ export default {
       this._turnTimer = null;
       if (turn !== this._turn) return;
       this._turn += 1;
+      this._abortRelay();
       this._fail('llm', '模型超时', '等了 ' + Math.round(LLM_TIMEOUT_MS / 1000) + ' 秒没有回答。');
     }, LLM_TIMEOUT_MS);
   },
 
+  // Clears both the idle timer and the stop-grace timer.
   _clearAsrTimer() {
     if (this._asrTimer !== null) {
       clearTimeout(this._asrTimer);
       this._asrTimer = null;
     }
+    if (this._asrStopTimer !== null) {
+      clearTimeout(this._asrStopTimer);
+      this._asrStopTimer = null;
+    }
   },
 
   _refreshAsrTimer(turn) {
-    this._clearAsrTimer();
+    if (this._asrTimer !== null) clearTimeout(this._asrTimer);
     this._asrTimer = setTimeout(() => {
       this._asrTimer = null;
       if (turn !== this._turn || this._phase !== 'listening') return;
       log('asr idle timeout');
       this._finishListening();
     }, ASR_IDLE_TIMEOUT_MS);
+  },
+
+  _steps(key) {
+    const base = STEPS[key];
+    if (!base) return '';
+    return SOURCE_STEPS.indexOf(key) >= 0 ? base + ' · ' + this._sourceName : base;
   },
 
   _setPhase(phase, extra) {
@@ -308,7 +344,7 @@ export default {
       statusLabel: status.label,
       statusGlyph: status.glyph,
       hint: hintFor(phase, this._errorKind),
-      stepText: STEPS[phase] || this.data.stepText,
+      stepText: this._steps(phase) || this.data.stepText,
       panelCapture: phase === 'capturing' || phase === 'ready' ? 'on' : '',
       panelAnswer: phase === 'reading' || phase === 'answered' ? 'on' : '',
       panelListen: phase === 'listening' ? 'on' : '',
@@ -327,7 +363,7 @@ export default {
     this._setPhase('error', { errorTitle: title, errorText: text || '', notice: '' });
   },
 
-  // Cancels every in-flight turn and releases microphone, speaker, and camera.
+  // Cancels every in-flight turn and releases microphone, speaker, camera, and network.
   _interrupt(reason) {
     this._turn += 1;
     this._clearTurnTimer();
@@ -335,6 +371,7 @@ export default {
     this._disposeRecognition();
     this._stopSpeech();
     this._stopStream();
+    this._abortRelay();
     if (this._phase === 'listening' || this._phase === 'reading' || this._phase === 'capturing') {
       const next = this._hasAnswer && this._phase !== 'capturing' ? 'answered' : 'ready';
       this._setPhase(next, {
@@ -472,7 +509,7 @@ export default {
     return this._session;
   },
 
-  // request: { kind: 'image' | 'text', messages? , text?, notice?, firstTurn? }
+  // request: { kind: 'image' | 'text', messages?, text?, notice?, spoken? }
   async _runRequest(request, existingTurn) {
     const turn = existingTurn === undefined ? this._newTurn() : existingTurn;
     this._lastRequest = request;
@@ -486,42 +523,93 @@ export default {
       excerpt: firstTurn ? '' : this.data.excerpt,
       excerptClass: firstTurn ? '' : this.data.excerptClass,
       terms: firstTurn ? [] : this.data.terms,
-      stepText: request.spoken ? STEPS.spoken : (firstTurn ? STEPS.reading : STEPS.followup)
+      stepText: this._steps(request.spoken ? 'spoken' : (firstTurn ? 'reading' : 'followup'))
     });
     this._armTurnTimer(turn);
     let text = '';
     try {
-      const session = await this._ensureSession();
+      text = this._useRelay ?
+        await this._askRelay(request, turn) :
+        await this._askHost(request, turn, firstTurn);
       if (turn !== this._turn) return;
-      if (request.kind === 'image') {
-        text = await session.prompt(request.messages);
-        if (turn !== this._turn) return;
-      } else {
-        const stream = session.promptStreaming(request.text);
-        while (true) {
-          const chunk = await stream.read();
-          if (turn !== this._turn) return;
-          if (chunk && chunk.done) break;
-          if (chunk && typeof chunk.value === 'string' && chunk.value.length > 0) {
-            text += chunk.value;
-            this._armTurnTimer(turn); // progress resets the silence watchdog
-            this._showAnswer(text, true, firstTurn);
-          } else {
-            await sleep(STREAM_POLL_MS);
-          }
-        }
-      }
     } catch (error) {
       if (turn !== this._turn) return;
       this._clearTurnTimer();
-      log('model failed: ' + errorMessage(error));
+      log('model failed (' + this._sourceName + '): ' + errorMessage(error));
       this._fail('llm', '解读失败', errorMessage(error));
       return;
     }
     this._clearTurnTimer();
+    if (request.kind === 'image' && isNoImageReply(text)) {
+      log('model reported NO_IMAGE (' + this._sourceName + ')');
+      this._hasImage = false;
+      this._fail('vision', '模型看不到照片', this._sourceName + ' 没有读到照片内容。单击镜腿，把这段文字念给我听。');
+      return;
+    }
     const parsed = this._showAnswer(text, false, firstTurn);
     this.setData({ turnCount: this.data.turnCount + 1 });
     this._speak(spokenText(parsed, text));
+  },
+
+  async _askHost(request, turn, firstTurn) {
+    const session = await this._ensureSession();
+    if (turn !== this._turn) return '';
+    if (request.kind === 'image') return session.prompt(request.messages);
+    const stream = session.promptStreaming(request.text);
+    let text = '';
+    while (true) {
+      const chunk = await stream.read();
+      if (turn !== this._turn) return text;
+      if (chunk && chunk.done) break;
+      if (chunk && typeof chunk.value === 'string' && chunk.value.length > 0) {
+        text += chunk.value;
+        this._armTurnTimer(turn); // progress resets the silence watchdog
+        this._showAnswer(text, true, firstTurn);
+      } else {
+        await sleep(STREAM_POLL_MS);
+      }
+    }
+    return text;
+  },
+
+  // The relay is stateless: every request carries the system prompt, the
+  // photo turn, and the recent conversation.
+  _relayMessagesFor(request) {
+    const system = { role: 'system', content: SYSTEM_PROMPT };
+    if (request.kind === 'image') return [system].concat(request.messages);
+    if (request.spoken) return [system, { role: 'user', content: request.text }];
+    return this._relayHistory.concat([{ role: 'user', content: request.text }]);
+  },
+
+  async _askRelay(request, turn) {
+    const messages = this._relayMessagesFor(request);
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    this._relayController = controller;
+    try {
+      const text = await callVision(
+        relayFetch,
+        visionConfig,
+        trimHistory(messages),
+        controller ? controller.signal : undefined
+      );
+      if (turn === this._turn) {
+        this._relayHistory = messages.concat([{ role: 'assistant', content: text }]);
+      }
+      return text;
+    } finally {
+      if (this._relayController === controller) this._relayController = null;
+    }
+  },
+
+  _abortRelay() {
+    const controller = this._relayController;
+    this._relayController = null;
+    if (!controller) return;
+    try {
+      controller.abort();
+    } catch (error) {
+      log('relay abort ignored: ' + errorMessage(error));
+    }
   },
 
   _showAnswer(text, pending, firstTurn) {
@@ -557,8 +645,8 @@ export default {
     this._disposeRecognition();
     this._stopSpeech();
     this._asrFailed = false;
-    let finalTranscript = '';
-    let liveTranscript = '';
+    this._asrFinal = '';
+    this._asrLive = '';
     const recognition = new SpeechRecognition();
     recognition.lang = SPEECH_LANG;
     recognition.continuous = false;
@@ -571,9 +659,9 @@ export default {
     recognition.onresult = (event) => {
       if (turn !== this._turn) return;
       const result = extractTranscript(event);
-      liveTranscript = result.transcript;
-      if (result.hasFinal && result.transcript) finalTranscript = result.transcript;
-      this.setData({ liveTranscript: liveTranscript || '…' });
+      this._asrLive = result.transcript;
+      if (result.hasFinal && result.transcript) this._asrFinal = result.transcript;
+      this.setData({ liveTranscript: this._asrLive || '…' });
       this._refreshAsrTimer(turn);
     };
     recognition.onerror = (event) => {
@@ -588,7 +676,7 @@ export default {
       this._releaseRecognition(recognition);
       if (turn !== this._turn || this._asrFailed) return;
       this._clearAsrTimer();
-      this._handleTranscript(turn, normalizeText(finalTranscript || liveTranscript));
+      this._handleTranscript(turn, this._asrText());
     };
     this._recognition = recognition;
     this._setPhase('listening', { liveTranscript: '…', notice: '' });
@@ -604,20 +692,33 @@ export default {
     this._refreshAsrTimer(turn);
   },
 
+  _asrText() {
+    return normalizeText(this._asrFinal || this._asrLive || '');
+  },
+
   _finishListening() {
     if (this._phase !== 'listening') return;
     this._clearAsrTimer();
     const recognition = this._recognition;
+    const turn = this._turn;
     if (!recognition) {
-      this._handleTranscript(this._turn, '');
+      this._handleTranscript(turn, this._asrText());
       return;
     }
+    // Armed before stop(): a host that never delivers onend still ends the turn.
+    this._asrStopTimer = setTimeout(() => {
+      this._asrStopTimer = null;
+      if (turn !== this._turn || this._phase !== 'listening' || this._recognition !== recognition) return;
+      log('asr stop grace expired; using the transcript so far');
+      this._disposeRecognition();
+      this._handleTranscript(turn, this._asrText());
+    }, ASR_STOP_GRACE_MS);
     try {
       recognition.stop();
     } catch (error) {
       log('recognition stop ignored: ' + errorMessage(error));
       this._disposeRecognition();
-      this._handleTranscript(this._turn, normalizeText(this.data.liveTranscript === '…' ? '' : this.data.liveTranscript));
+      this._handleTranscript(turn, this._asrText());
     }
   },
 
@@ -646,7 +747,8 @@ export default {
     const command = classifyFollowUp(transcript);
     log('transcript kind=' + command.kind + ' text=' + command.text);
     if (command.kind === 'empty') {
-      const next = this._hasAnswer ? 'answered' : (this._errorKind === 'camera' ? 'error' : 'ready');
+      const next = this._hasAnswer ? 'answered' :
+        (this._errorKind === 'camera' || this._errorKind === 'vision' ? 'error' : 'ready');
       this._setPhase(next, { notice: '没听清，再试一次', liveTranscript: '' });
       return;
     }
@@ -658,6 +760,7 @@ export default {
     if (command.kind === 'recapture') {
       this._hasImage = false;
       this._hasAnswer = false;
+      this._relayHistory = [];
       this._setPhase('ready', { captureTitle: '准备重拍', captureText: '对准新的段落', liveTranscript: '' });
       this._capture('voice');
       return;

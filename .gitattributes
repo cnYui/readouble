@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.aix binary
+*.jpg binary
+*.png binary

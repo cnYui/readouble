@@ -287,3 +287,40 @@ test('target changes are recorded and unparseable model text still renders', asy
   assert.deepEqual(page.data.terms, []);
   page.onUnload();
 });
+
+test('a host that never ends recognition after stop still finishes the turn', async () => {
+  const runtime = installRuntime();
+  const page = openPage({});
+  await waitFor(() => page.data.phase === 'answered');
+  runtime.settings.silentStop = true;
+  page.onKeyUp(keyEvent('Enter'));
+  const recognition = runtime.calls.recognitions[0];
+  recognition.emit('为什么要用注意力', false);
+  page.onKeyUp(keyEvent('Enter'));
+  assert.equal(recognition.stopped, 1);
+  assert.equal(page.data.phase, 'listening');
+  await waitFor(() => page.data.turnCount === 2, 4000);
+  assert.equal(runtime.calls.streams[0], '为什么要用注意力');
+  assert.equal(recognition.aborted, 1);
+  page.onUnload();
+});
+
+test('a host model that admits it cannot see the photo gets the spoken fallback', async () => {
+  installRuntime({ imageReply: 'NO_IMAGE' });
+  const page = openPage({});
+  await waitFor(() => page.data.phase === 'error');
+  assert.equal(page.data.errorTitle, '模型看不到照片');
+  assert.match(page.data.errorText, /宿主模型/);
+  assert.equal(page.data.hint, '单击 念出这段文字 由我来解读');
+  page.onKeyUp(keyEvent('Enter'));
+  assert.equal(page.data.phase, 'listening');
+  page.onUnload();
+});
+
+test('the committed config has no key, so the page uses the host model and says so', async () => {
+  installRuntime();
+  const page = openPage({});
+  await waitFor(() => page.data.phase === 'answered');
+  assert.match(page.data.stepText, /宿主模型/);
+  page.onUnload();
+});

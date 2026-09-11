@@ -11,7 +11,10 @@ export function repoPath(...parts) {
   return path.join(ROOT, ...parts);
 }
 
-export async function loadPageDefinition(inkRelativePath) {
+// options.importOverrides maps a relative specifier used by the page (for
+// example '../../config/vision.js') to a repository-relative replacement file.
+export async function loadPageDefinition(inkRelativePath, options = {}) {
+  const overrides = options.importOverrides || {};
   const inkPath = repoPath(inkRelativePath);
   const source = fs.readFileSync(inkPath, 'utf8');
   const match = source.match(/<script setup>([\s\S]*?)<\/script>/);
@@ -21,6 +24,9 @@ export async function loadPageDefinition(inkRelativePath) {
   let code = match[1];
   code = code.replace(/from\s+'wx'/g, () => `from '${shimUrl}'`);
   code = code.replace(/from\s+'(\.\.?\/[^']+)'/g, (whole, relative) => {
+    if (Object.prototype.hasOwnProperty.call(overrides, relative)) {
+      return `from '${pathToFileURL(repoPath(overrides[relative])).href}'`;
+    }
     return `from '${pathToFileURL(path.resolve(pageDir, relative)).href}'`;
   });
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'readouble-page-'));

@@ -74,7 +74,8 @@ export function installRuntime(options = {}) {
     }
     stop() {
       this.stopped += 1;
-      if (this.onend) this.onend();
+      // settings.silentStop reproduces Studio 1.1.0: stop() without a later onend.
+      if (!settings.silentStop && this.onend) this.onend();
     }
     abort() {
       this.aborted += 1;
