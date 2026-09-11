@@ -1,0 +1,1 @@
+{"schemaVersion":1,"scopeClosed":true,"claims":[{"family":"input.voice.unknown","surface":"App","description":"Spoken questions about the paper in view open the explain Page with the question text"},{"family":"page.route","surface":"App","description":"The Agent host opens the explain Page for each new paper question"}]}

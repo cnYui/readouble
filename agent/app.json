@@ -1,0 +1,7 @@
+{
+  "pages": ["pages/explain/index"],
+  "permissions": ["CAMERA", "RECORD_AUDIO"],
+  "window": {
+    "navigationBarTitleText": "读伴"
+  }
+}

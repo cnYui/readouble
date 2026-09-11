@@ -1,0 +1,14 @@
+{
+  "name": "readouble",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ReaDouble (读伴): a Rokid Glasses AIUI agent that photographs the paper you are reading, explains the passage, and answers spoken follow-ups.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "validate": "python C:/Users/yui/.claude/skills/rokid-aiui-agent/scripts/validate_aiui_project.py agent --repository-root . --target-version 0.17.0 --strict"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
