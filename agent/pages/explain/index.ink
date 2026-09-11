@@ -32,6 +32,7 @@ import {
   buildImageMessages,
   buildSpokenInstruction,
   classifyCameraError,
+  clampText,
   classifyFollowUp,
   errorMessage,
   extractTranscript,
@@ -658,14 +659,14 @@ export default {
         kind: 'text',
         text: buildSpokenInstruction(this._question, command.text),
         spoken: true,
-        notice: '听写 · ' + command.text
+        notice: '听写 · ' + clampText(command.text, 18)
       }, turn);
       return;
     }
     this._runRequest({
       kind: 'text',
       text: buildFollowUpInstruction(command.kind, command.text),
-      notice: '追问 · ' + command.text
+      notice: '追问 · ' + clampText(command.text, 18)
     }, turn);
   },
 

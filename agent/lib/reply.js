@@ -167,6 +167,13 @@ export function classifyFollowUp(transcript) {
   return { kind: 'question', text: clampUnicode(text, MAX_TRANSCRIPT_LENGTH) };
 }
 
+// Short, single-line notice text: the runtime does not reliably apply
+// text-overflow ellipsis, so clamp in JS.
+export function clampText(value, limit) {
+  const chars = Array.from(normalizeText(value).replace(/\s+/g, ' '));
+  return chars.length <= limit ? chars.join('') : chars.slice(0, limit).join('') + '…';
+}
+
 export function spokenText(parsed, fallback) {
   const source = parsed && parsed.explanation ? parsed.explanation : normalizeText(fallback);
   const flat = source.replace(/\s+/g, ' ').trim();

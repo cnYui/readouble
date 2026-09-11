@@ -5,6 +5,7 @@ import {
   MAX_QUESTION_LENGTH,
   arrayBufferToBase64,
   buildImageMessages,
+  clampText,
   classifyCameraError,
   classifyFollowUp,
   extractTranscript,
@@ -134,4 +135,12 @@ test('every phase has a status and a hint', () => {
   }
   assert.equal(hintFor('error', 'camera'), '单击 念出这段文字 由我来解读');
   assert.equal(statusFor('bogus').label, 'ERROR');
+});
+
+test('clampText keeps short text and adds an ellipsis to long text', () => {
+  assert.equal(clampText('  short
+ text ', 18), 'short text');
+  assert.equal(clampText('a'.repeat(30), 18), 'a'.repeat(18) + '…');
+  assert.equal(Array.from(clampText('字'.repeat(40), 18)).length, 19);
+  assert.equal(clampText(undefined, 5), '');
 });
