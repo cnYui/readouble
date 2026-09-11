@@ -46,7 +46,9 @@ import {
   taskLabel
 } from '../../lib/reply.js';
 
-const LLM_TIMEOUT_MS = 45000;
+// Studio's simulator answered the image-free first turn in ~30-45 s; the
+// photo turn has no streaming progress, so the silence budget stays generous.
+const LLM_TIMEOUT_MS = 75000;
 const ASR_IDLE_TIMEOUT_MS = 6000;
 const STREAM_POLL_MS = 16;
 const SCROLL_STEP_PX = 120;
@@ -59,6 +61,7 @@ const STEPS = {
   reading: '拍照 ✓ · 识别与解读 ●',
   answered: '拍照 ✓ · 识别 ✓ · 解读 ✓',
   listening: '追问 ◉ · 说完后单击结束',
+  followup: '追问 ✓ · 回答 ●',
   spoken: '相机不可用 · 听写 ✓ · 解读 ●'
 };
 
@@ -276,7 +279,7 @@ export default {
       this._turnTimer = null;
       if (turn !== this._turn) return;
       this._turn += 1;
-      this._fail('llm', '模型超时', '等了 45 秒没有回答。');
+      this._fail('llm', '模型超时', '等了 ' + Math.round(LLM_TIMEOUT_MS / 1000) + ' 秒没有回答。');
     }, LLM_TIMEOUT_MS);
   },
 
@@ -483,7 +486,7 @@ export default {
       excerpt: firstTurn ? '' : this.data.excerpt,
       excerptClass: firstTurn ? '' : this.data.excerptClass,
       terms: firstTurn ? [] : this.data.terms,
-      stepText: request.spoken ? STEPS.spoken : STEPS.reading
+      stepText: request.spoken ? STEPS.spoken : (firstTurn ? STEPS.reading : STEPS.followup)
     });
     this._armTurnTimer(turn);
     let text = '';
@@ -501,6 +504,7 @@ export default {
           if (chunk && chunk.done) break;
           if (chunk && typeof chunk.value === 'string' && chunk.value.length > 0) {
             text += chunk.value;
+            this._armTurnTimer(turn); // progress resets the silence watchdog
             this._showAnswer(text, true, firstTurn);
           } else {
             await sleep(STREAM_POLL_MS);
@@ -593,7 +597,11 @@ export default {
     } catch (error) {
       this._releaseRecognition(recognition);
       this._fail('asr', '语音启动失败', errorMessage(error));
+      return;
     }
+    // Hosts that never fire onstart (Studio 1.1.0 simulator) would otherwise
+    // listen forever; the idle timer is armed from start() itself.
+    this._refreshAsrTimer(turn);
   },
 
   _finishListening() {
@@ -654,7 +662,9 @@ export default {
       this._capture('voice');
       return;
     }
-    if (!this._hasImage) {
+    // Without a photo, the first transcript is the passage itself; once an
+    // answer exists every later transcript is a follow-up in the same session.
+    if (!this._hasImage && !this._hasAnswer) {
       this._runRequest({
         kind: 'text',
         text: buildSpokenInstruction(this._question, command.text),
